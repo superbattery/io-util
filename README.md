@@ -10,7 +10,7 @@ a buffer which can read data from network automatically when its data almost run
 
 ## Usage
 
-* `auto produce buffer`
+### `auto produce buffer`
 
 * implement your own io class from ioable.h
 * follow the example 
