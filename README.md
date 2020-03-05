@@ -1,6 +1,6 @@
 # io-util
 
-## including
+## Introduction
 
 ### `auto produce buffer`
 
