@@ -80,7 +80,7 @@ class local_file:public ioable
     private:
     u8string path_name_;
     fs::path path_;
-    std::ifstream ifs;
+    fs::ifstream ifs;
     bool is_open_=false;
 
     uint64_t io_len_=0;

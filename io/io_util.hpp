@@ -5,13 +5,29 @@
 #include <cstdint>
 #include <string>
 #include <functional>
+
+#if defined _NO_CPP17_FS
+#include "ghc/filesystem.hpp"
+namespace fs
+{
+using namespace ghc::filesystem;
+using ifstream = ghc::filesystem::ifstream;
+using ofstream = ghc::filesystem::ofstream;
+using fstream = ghc::filesystem::fstream;
+} // namespace fs
+#else
+
 #include <experimental/filesystem>
 //#include <filesystem>
-
 namespace fs
 {
 using namespace std::experimental::filesystem;
-}
+//using namespace std::filesystem;
+using ifstream = std::ifstream;
+using ofstream = std::ofstream;
+using fstream = std::fstream;
+} // namespace fs
+#endif
 
 namespace utl
 {
