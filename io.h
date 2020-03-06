@@ -4,7 +4,8 @@
 
 #include "io/io_util.hpp"
 #include "io/ioable.h"
-#include "io/auto_produce_buffer.hpp"
 #include "io/local_file.hpp"
+#include "io/auto_produce_buffer.hpp"
+#include "io/period_auto_pop_queue.hpp"
 
 #endif
