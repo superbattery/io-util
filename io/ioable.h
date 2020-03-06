@@ -5,11 +5,11 @@
 #include <cstdint>
 #include <string>
 
-class ioable
+#include "noncopyable.h"
+
+class ioable:public noncopyable
 {
-protected:
-    ioable()=default;
-    virtual ~ioable(){}
+
 public:
     typedef std::string u8string;
 
@@ -22,12 +22,6 @@ public:
     virtual bool eof()=0;
     virtual bool is_open()=0;
     virtual const u8string& get_path_name()=0;
-
-private:
-    ioable(const ioable&) = delete;
-    ioable& operator=(const ioable&) = delete;
-    //ioable(ioable&&) = delete;
-    //ioable& operator=(ioable&&) = delete;
 
 };
 
