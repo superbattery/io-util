@@ -93,9 +93,10 @@ public:
             //qDebug()<<"======="<<ring_buffer.size()*1.0/ring_buffer.capacity()<<" this:"
             //     <<QString::number(to_read)<<"io:"<<QString::number(io_imp_.tellg())<<"/"<<QString::number(io_imp_.telllen());
 
-            bool need_push = ring_buffer.size() < ring_buffer.capacity() * 1.0 / 2;
+            size_t curr_buffer_size=ring_buffer.size();
+            bool need_push = curr_buffer_size < ring_buffer.capacity() * 1.0 / 2;
 
-            if (need_push)
+            if (need_push && !push_error)//TODO 若发生错误，则马上取消push，最后交由调用者决定是否继续push。
             {
                 notify_push(true);
             }
@@ -103,7 +104,7 @@ public:
             //wait push
             if (need_push && ring_buffer.size() < to_read)
             {
-                wait_th_status(true, [&, _pre_size = ring_buffer.size()]() -> bool {
+                wait_th_status(true, [&, _pre_size = curr_buffer_size]() -> bool {
                     return (ring_buffer.size() > _pre_size) || io_imp_.eof() || push_error;
                 });
                 if (push_error)
