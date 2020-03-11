@@ -33,7 +33,7 @@ public:
         }
     }
 
-    virtual bool open(const u8string &_path)
+    bool open(const u8string &_path) override
     {
         if (is_open_)
         {
@@ -47,7 +47,7 @@ public:
         is_open_ = true;
         return true;
     }
-    virtual void close()
+    void close() override
     {
         if (!is_open_)
         {
@@ -66,7 +66,7 @@ public:
 
         is_open_ = false;
     }
-    virtual bool seekg(uint64_t _pos)
+    bool seekg(uint64_t _pos) override
     {
         if (!is_open_)
         {
@@ -81,7 +81,7 @@ public:
         ring_buffer.clear();
         return true;
     }
-    virtual bool read(uint8_t *_buf, uint32_t _len)
+    bool read(uint8_t *_buf, uint32_t _len) override
     {
         if (!is_open_)
         {
@@ -96,13 +96,13 @@ public:
             size_t curr_buffer_size=ring_buffer.size();
             bool need_push = curr_buffer_size < ring_buffer.capacity() * 1.0 / 2;
 
-            if (need_push && !push_error)//TODO 若发生错误，则马上取消push，最后交由调用者决定是否继续push。
+            if (need_push && !push_error)//仅当上次失败标志得到重置（消费）后
             {
                 notify_push(true);
             }
 
             //wait push
-            if (need_push && ring_buffer.size() < to_read)
+            if (need_push && ring_buffer.size() < to_read)//已通知生产了，这里重新获取ring_buffer size进行判断更为精确
             {
                 wait_th_status(true, [&, _pre_size = curr_buffer_size]() -> bool {
                     return (ring_buffer.size() > _pre_size) || io_imp_.eof() || push_error;
@@ -127,7 +127,7 @@ public:
         io_pos_ += _len;
         return true;
     }
-    virtual uint64_t tellg()
+    uint64_t tellg() override
     {
         if (!is_open_)
         {
@@ -135,7 +135,7 @@ public:
         }
         return io_pos_;
     }
-    virtual uint64_t telllen()
+    uint64_t telllen() override
     {
         if (!is_open_)
         {
@@ -143,7 +143,7 @@ public:
         }
         return io_len_;
     }
-    virtual bool eof()
+    bool eof() override
     {
         if (!is_open_)
         {
@@ -156,12 +156,12 @@ public:
         return io_pos_ == io_len_;
     }
 
-    virtual bool is_open()
+    bool is_open() override
     {
         return is_open_;
     }
 
-    virtual const u8string &get_path_name()
+    const u8string &get_path_name() override
     {
         return io_imp_.get_path_name();
     }

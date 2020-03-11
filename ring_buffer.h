@@ -54,11 +54,18 @@ public:
         return capacity_;
     }
 
+    //not thread safe
     inline void clear()
     {
         front_=0;
         rear_=0;
         size_=0;
+    }
+
+    //not thread safe
+    inline void set_read_pos(int64_t _pos)
+    {
+
     }
 
     /**

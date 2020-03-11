@@ -14,7 +14,7 @@ class local_file:public ioable
     {
         if(is_open_){close();}
     }
-    virtual bool open(const u8string& _path)
+    bool open(const u8string& _path) override
     {
         if(is_open_){close();}
         
@@ -27,14 +27,14 @@ class local_file:public ioable
         is_open_=true;
         return true;
     }
-    virtual void close()
+    void close() override
     {
         ifs.close();
         io_pos_=0;
         io_len_=0;
         is_open_=false;
     }
-    virtual bool seekg(uint64_t _pos)
+    bool seekg(uint64_t _pos) override
     {
         if (!is_open_){throw std::logic_error("seekg():not open");}
         ifs.seekg(_pos, std::ios::beg);
@@ -42,7 +42,7 @@ class local_file:public ioable
         io_pos_=_pos;
         return true;
     }
-    virtual bool read(uint8_t* _buf, uint32_t _len)
+    bool read(uint8_t* _buf, uint32_t _len) override
     {
         if (!is_open_){throw std::logic_error("read():not open");}
         ifs.read(reinterpret_cast<char*>(_buf), _len);
@@ -51,28 +51,28 @@ class local_file:public ioable
         return true;
 
     }
-    virtual uint64_t tellg()
+    uint64_t tellg() override
     {
         if (!is_open_){throw std::logic_error("tellg():not open");}
         return io_pos_;
     }
-    virtual uint64_t telllen()
+    uint64_t telllen() override
     {
         if (!is_open_){throw std::logic_error("telllen():not open");}
         return io_len_;
     }
-    virtual bool eof()
+    bool eof() override
     {
         if (!is_open_){throw std::logic_error("eof():not open");}
         if(io_pos_>io_len_){throw std::logic_error("eof():io_pos_>io_len_");}
         return io_pos_==io_len_;
     }
-    virtual bool is_open()
+    bool is_open() override
     {
         return is_open_;
     }
 
-    virtual const u8string& get_path_name()
+    const u8string& get_path_name() override
     {
         return path_name_;
     }
