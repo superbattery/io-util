@@ -7,5 +7,6 @@
 #include "io/local_file.hpp"
 #include "io/auto_produce_buffer.hpp"
 #include "io/period_auto_pop_queue.hpp"
+#include "io/mirrorable_io.hpp"
 
 #endif

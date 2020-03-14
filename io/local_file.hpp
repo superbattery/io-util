@@ -29,6 +29,7 @@ class local_file:public ioable
     }
     void close() override
     {
+        if(!is_open_){return;}
         ifs.close();
         io_pos_=0;
         io_len_=0;
@@ -37,6 +38,7 @@ class local_file:public ioable
     bool seekg(uint64_t _pos) override
     {
         if (!is_open_){throw std::logic_error("seekg():not open");}
+        if(io_pos_==_pos){return true;}
         ifs.seekg(_pos, std::ios::beg);
         if(!ifs){return false;}
         io_pos_=_pos;

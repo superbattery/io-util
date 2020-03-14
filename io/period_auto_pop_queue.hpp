@@ -30,11 +30,6 @@ public:
 	}
     bool push(const __T *chunk, uint32_t len)
 	{
-		//LOGD("wwwwwOOOOOO=%d",len);
-        if(buffer_cursor==period_size_)
-		{
-			//TODO:上次的m_call()失败，可以m_call()或选择复位(buffer_cursor=0)
-		}
         if (buffer_cursor == 0 && len == period_size_)
 		{
 			return m_call(chunk, len);
@@ -51,8 +46,9 @@ public:
 				len-=fill_len;
                 if(buffer_cursor==period_size_)
 				{
-                    if(!m_call(&buffer[0], period_size_)) return false;
+					bool b=m_call(&buffer[0], period_size_);
 					buffer_cursor=0;
+                    if(!b) {return false;}
 				}
 			}
 		}
