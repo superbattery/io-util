@@ -2,6 +2,8 @@
 #ifndef MIRROR_IO_HPP
 #define MIRROR_IO_HPP
 
+#define __MIRROR_IO_MEM_TYPE
+
 #include <cassert>
 #include <list>
 #include <iterator>
@@ -17,7 +19,8 @@ template <typename __ioable_imp>
 class mirror_io : public ioable
 {
 public:
-    explicit mirror_io(__ioable_imp &_io_imp) : io_imp_(_io_imp)
+    explicit mirror_io(__ioable_imp &_io_imp, const u8string &_map_path) : io_imp_(_io_imp)
+      ,map_path(_map_path)
       ,curr_mirror_view_it_(mirror_views_.end())
     {
     }
@@ -45,23 +48,25 @@ public:
 
         assert(io_len_>=0);
 
-        //try
-        //{
-        //    mirror_.resize(io_len_);
-        //}
-        //catch (const std::exception &e)
-        //{
-        //    throw e;
-        //}
 
-        allocate_file("D:/mmap", io_len_);
+#ifdef __MIRROR_IO_MEM_TYPE
+        try
+        {
+            mirror_.resize(io_len_);
+        }
+        catch (const std::exception &e)
+        {
+            throw e;
+        }
+#else
+        if(!allocate_file(map_path, io_len_)){return false;}
         std::error_code error;
-        mirror_ = mio::make_mmap_sink(
-                    "D:/mmap", 0, io_len_, error);
+        mirror_ = mio::make_mmap_sink(map_path, 0, io_len_, error);
         if(error)
         {
             return false;
         }
+#endif
 
         is_open_ = true;
         return true;
@@ -73,12 +78,12 @@ public:
             return;
         }
 
-        //mirror_.clear();
-
+#ifdef __MIRROR_IO_MEM_TYPE
+        mirror_.clear();
+#else
         save(false);//TODO: not necessary to call save()
         mirror_.unmap();
-
-
+#endif
         mirror_views_.clear();
         curr_mirror_view_it_=mirror_views_.end();
 
@@ -128,6 +133,8 @@ public:
     {
         assert(is_open_);
         assert(_len>=0&&_len<=io_len_);
+        //assert(io_pos_+_len<=io_len_-1);
+        assert(io_pos_+_len<=io_len_);
 
         if(_len==0){return true;}
 
@@ -153,7 +160,8 @@ public:
     bool eof() override
     {
         assert(is_open_);
-        assert(io_pos_<io_len_);
+        //assert(io_pos_<io_len_);
+        assert(io_pos_<=io_len_);
 
         //当io_len==0时，io_pos的值是无效的
         //if(io_len_==0){throw std::logic_error("eof():io_len==0");}
@@ -170,6 +178,15 @@ public:
     }
 
 public:
+    void set_map_type(bool _type)
+    {
+    }
+
+    void set_map_path(const u8string& _path)
+    {
+        map_path=_path;
+    }
+
     bool totally_mirrord()
     {
         if(io_len_==0){return true;}
@@ -182,6 +199,7 @@ public:
         }
     }
 
+#ifndef __MIRROR_IO_MEM_TYPE
     bool save(bool _total=true)
     {
         if(_total&&!totally_mirrord())
@@ -195,6 +213,7 @@ public:
         mirror_.sync(err);
         return !err;
     }
+#endif
 
 private:
 
@@ -352,9 +371,10 @@ private:
         }
     };
 
-    void allocate_file(const std::string& u8_path, const int size)
+    bool allocate_file(const std::string& u8_path, const int size)
     {
         std::ofstream file(u8_path, std::ios::binary);
+        if(!file.is_open()){return false;}
 
         uint64_t to_write=size;
         const char buf[102400]={0};
@@ -362,8 +382,10 @@ private:
         {
             auto m=std::min(sizeof (buf), to_write);
             file.write(buf, m);
+            if(!file){return false;}
             to_write-=m;
         }
+        return true;
     }
 
     bool fill_mirror(const range& _r1)
@@ -529,8 +551,12 @@ private:
     }
 
 private:
-    //std::vector<uint8_t> mirror_;
+#ifdef __MIRROR_IO_MEM_TYPE
+    std::vector<uint8_t> mirror_;
+#else
     mio::mmap_sink mirror_;
+#endif
+    u8string map_path;
     std::list<range> mirror_views_;
     //std::set<std::pair<uint64_t, uint64_t>> mirror_views_;
 
