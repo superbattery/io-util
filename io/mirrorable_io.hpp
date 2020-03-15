@@ -2,14 +2,14 @@
 #ifndef MIRROR_IO_HPP
 #define MIRROR_IO_HPP
 
-#include <vector>
-#include <map>
+#include <cassert>
 #include <list>
-#include <set>
 #include <iterator>
 
 #include <qdebug.h>
 
+
+#include "mio/mmap.hpp"
 #include "ioable.h"
 #include "util.h"
 
@@ -18,7 +18,7 @@ class mirror_io : public ioable
 {
 public:
     explicit mirror_io(__ioable_imp &_io_imp) : io_imp_(_io_imp)
-      ,curr_mirror_view_it_(mirror_views_.end())/*, curr_mirror_view_(mirror_views_.front())*/
+      ,curr_mirror_view_it_(mirror_views_.end())
     {
     }
 
@@ -43,13 +43,24 @@ public:
         }
         io_len_ = io_imp_.telllen();
 
-        try
+        assert(io_len_>=0);
+
+        //try
+        //{
+        //    mirror_.resize(io_len_);
+        //}
+        //catch (const std::exception &e)
+        //{
+        //    throw e;
+        //}
+
+        allocate_file("D:/mmap", io_len_);
+        std::error_code error;
+        mirror_ = mio::make_mmap_sink(
+                    "D:/mmap", 0, io_len_, error);
+        if(error)
         {
-            mirror_.resize(io_len_);
-        }
-        catch (const std::exception &e)
-        {
-            throw e;
+            return false;
         }
 
         is_open_ = true;
@@ -62,7 +73,12 @@ public:
             return;
         }
 
-        mirror_.clear();
+        //mirror_.clear();
+
+        save(false);//TODO: not necessary to call save()
+        mirror_.unmap();
+
+
         mirror_views_.clear();
         curr_mirror_view_it_=mirror_views_.end();
 
@@ -73,11 +89,9 @@ public:
     }
     bool seekg(uint64_t _pos) override
     {
-        if (!is_open_)
-        {
-            throw std::logic_error("seekg():not open");
-        }
-
+        assert(is_open_);
+        assert(io_len_>0);
+        assert(_pos>=0&&_pos<io_len_);
 
         curr_mirror_view_it_=mirror_views_.size()==0?mirror_views_.end():mirror_views_.begin();
         for(typename std::list<range>::iterator it=mirror_views_.begin();it!=mirror_views_.end();++it)
@@ -90,15 +104,16 @@ public:
             }
             else if(elem.a>_pos&&it!=mirror_views_.begin())
             {
-                curr_mirror_view_it_=it;
-                curr_mirror_view_it_--;
+                if(!io_imp_.seekg(_pos)){return false;}
+                curr_mirror_view_it_=std::prev(it);
                 break;
             }
             else
             {
-                typename std::list<range>::iterator tt=it;
-                if(++tt==mirror_views_.end())
+                if(std::next(it)==mirror_views_.end())
                 {
+                    //the last one
+                    if(!io_imp_.seekg(_pos)){return false;}
                     curr_mirror_view_it_=it;
                     break;
                 }
@@ -111,193 +126,37 @@ public:
     }
     bool read(uint8_t *_buf, uint32_t _len) override
     {
-        if (!is_open_)
-        {
-            throw std::logic_error("read():not open");
-        }
-        if(_len<=0){return true;}
+        assert(is_open_);
+        assert(_len>=0&&_len<=io_len_);
 
-        for(auto& d:mirror_views_)
-        qDebug()<<"=="<<mirror_views_.size()<<"=="<<d.a<<","<<d.b;
-        qDebug()<<"==============================================="<<io_pos_;
+        if(_len==0){return true;}
 
-        range r_all_to_read(io_pos_, io_pos_+_len-1);
-        range r_to_read=r_all_to_read;
-        bool is_complete=false;
-
-
-        /*auto it=std::find_if(curr_mirror_view_it_, mirror_views_.end(), [](const range& r1)
-        {
-
-        });
-
-        if(it==mirror_views_.end())
-        {
-            curr_mirror_view_idx_=-1;
-        }
-        else{
-            curr_mirror_view_idx_=it-mirror_views_.begin();
-        }*/
-
-        for(typename std::list<range>::iterator it=curr_mirror_view_it_;it!=mirror_views_.end();++it)
-        {
-            range &elem=*it;
-            range r_intersect(0,0);
-
-            if(r_to_read.in(elem)||r_to_read.equals(elem))
-            {
-                //r_intersect=r_to_read.get_intersect(elem);
-                //memcpy(mirror_.data()+r_intersect.a, mirror_.data()+r_intersect.b, r_intersect.size());
-                //curr_mirror_view_it_=it;
-                is_complete=true;
-                break;
-            }
-            else if(r_to_read.left_intersects(elem))
-            {
-                r_intersect=r_to_read.get_intersect(elem);
-                //memcpy(mirror_.data()+r_intersect.a, mirror_.data()+r_intersect.b, r_intersect.size());
-                r_to_read.sub_intersect(r_intersect);
-            }
-            else if((r_to_read.contains(elem)&&!r_to_read.equals(elem))||r_to_read.right_intersects(elem))
-            {
-                //读取前面一段间隙
-                if(r_to_read.a<elem.a)
-                {
-                    range r_gap(r_to_read.a, elem.a-1);
-                    if(!read_data(r_gap)){return false;}
-                    r_to_read.sub_intersect(r_gap);
-                }
-
-                //拷贝交集
-                r_intersect=r_to_read.get_intersect(elem);
-                //memcpy(mirror_.data()+r_intersect.a, mirror_.data()+r_intersect.b, r_intersect.size());
-
-                if(r_to_read.equals(r_intersect))
-                {
-                    //curr_mirror_view_it_=it;
-                    is_complete=true;
-                    break;
-                }
-                else
-                {
-                    r_to_read.sub_intersect(r_intersect);
-                }
-
-            }
-            else if(!r_to_read.intersects(elem)&& elem.a>r_to_read.b)//且在右侧
-            {
-                if(!read_data(r_to_read)){return false;}
-                is_complete=true;
-                break;
-            }
-        }
-
-        //后面没有mirror了
-        if(!is_complete)
-        {
-            if(!read_data(r_to_read)){return false;}
-        }
-
-
-        typename std::list<range>::iterator left_it=mirror_views_.end();
-        typename std::list<range>::iterator right_it=mirror_views_.end();
-
-        if(curr_mirror_view_it_==mirror_views_.end())
-        {
-            mirror_views_.push_back(r_all_to_read);
-            curr_mirror_view_it_=mirror_views_.begin();
-        }
-        else if(r_all_to_read.in(*curr_mirror_view_it_))
-        {
-            //curr_mirror_view_it_=first_range;
-        }
-        else
-        {
-            for(typename std::list<range>::iterator it=curr_mirror_view_it_;it!=mirror_views_.end();)
-            {
-                range &elem=*it;
-                if(r_all_to_read.left_intersects(elem)||r_all_to_read.left_beside(elem))
-                {
-                    left_it=it;
-                }
-                else if (r_all_to_read.right_intersects(elem)||r_all_to_read.right_beside(elem)) {
-                    right_it=it;
-                }
-                else if(elem.a>r_all_to_read.b)
-                {
-                    break;
-                }
-                else if(r_all_to_read.contains(elem))
-                {
-                    mirror_views_.erase(it);
-                    continue;
-                }
-                ++it;
-            }
-
-
-            if(left_it!=mirror_views_.end())
-            {
-                if(right_it!=mirror_views_.end())
-                {
-                    (*left_it).b=(*right_it).b;
-                    mirror_views_.erase(right_it);
-                }
-                else
-                {
-                    (*left_it).b=r_all_to_read.b;
-                }
-                curr_mirror_view_it_=left_it;
-            }
-            else
-            {
-                if(right_it!=mirror_views_.end())
-                {
-                    (*right_it).a=r_all_to_read.a;
-                    curr_mirror_view_it_=right_it;
-                }
-                else
-                {
-                    typename std::list<range>::iterator tt=curr_mirror_view_it_;
-                    curr_mirror_view_it_=mirror_views_.insert(++tt, r_all_to_read);
-                }
-            }
-        }
-
-
-
+        if(!fill_mirror(range(io_pos_, io_pos_+_len-1))){return false;}
 
         memcpy(_buf, mirror_.data()+io_pos_, _len);
-
         io_pos_ += _len;
         return true;
     }
     uint64_t tellg() override
     {
-        if (!is_open_)
-        {
-            throw std::logic_error("tellg():not open");
-        }
+        assert(is_open_);
+
+        //当io_len==0时，io_pos的值是无效的
+        if(io_len_==0){throw std::logic_error("tellg():io_len==0");}
         return io_pos_;
     }
     uint64_t telllen() override
     {
-        if (!is_open_)
-        {
-            throw std::logic_error("telllen():not open");
-        }
+        assert(is_open_);
         return io_len_;
     }
     bool eof() override
     {
-        if (!is_open_)
-        {
-            throw std::logic_error("eof():not open");
-        }
-        if (io_pos_ > io_len_)
-        {
-            throw std::logic_error("eof():io_pos_>io_len_");
-        }
+        assert(is_open_);
+        assert(io_pos_<io_len_);
+
+        //当io_len==0时，io_pos的值是无效的
+        //if(io_len_==0){throw std::logic_error("eof():io_len==0");}
         return io_pos_ == io_len_;
     }
     bool is_open() override
@@ -308,6 +167,33 @@ public:
     const u8string &get_path_name() override
     {
         return io_imp_.get_path_name();
+    }
+
+public:
+    bool totally_mirrord()
+    {
+        if(io_len_==0){return true;}
+        if(mirror_views_.size()!=1){
+            return false;
+        }
+        else{
+            auto& elem=mirror_views_.front();
+            return elem.a==0&&elem.b==io_len_-1;
+        }
+    }
+
+    bool save(bool _total=true)
+    {
+        if(_total&&!totally_mirrord())
+        {
+            assert(io_len_>0);
+            if(!seekg(0)){return false;}
+            if(!fill_mirror(range(0, io_len_-1))){return false;}
+        }
+
+        std::error_code err;
+        mirror_.sync(err);
+        return !err;
     }
 
 private:
@@ -466,39 +352,195 @@ private:
         }
     };
 
-
-    bool fill_mirror(uint64_t _pos, uint32_t _len)
+    void allocate_file(const std::string& u8_path, const int size)
     {
-        range r(_pos, _pos+_len-1);
-        //mirror_views_.find()
+        std::ofstream file(u8_path, std::ios::binary);
+
+        uint64_t to_write=size;
+        const char buf[102400]={0};
+        while(to_write>0)
+        {
+            auto m=std::min(sizeof (buf), to_write);
+            file.write(buf, m);
+            to_write-=m;
+        }
+    }
+
+    bool fill_mirror(const range& _r1)
+    {
+        //warning: 调用前应确保curr_mirror_view_it_是正确的，否则UB
+        //若此次的range与上一次的正向连续，该方法会自动正确计算curr_mirror_view_it_，
+        //否则应调用seekg()以重新计算curr_mirror_view_it_
+
+        assert(is_open_);
+
+        for(auto& d:mirror_views_)
+            qDebug()<<"=="<<mirror_views_.size()<<"=="<<d.a<<","<<d.b;
+        qDebug()<<"==============================================="<<io_pos_;
+
+        range _r1_tmp=_r1;
+        bool is_complete=false;
+
+
+        /*auto it=std::find_if(curr_mirror_view_it_, mirror_views_.end(), [](const range& r1)
+        {
+
+        });
+
+        if(it==mirror_views_.end())
+        {
+            curr_mirror_view_idx_=-1;
+        }
+        else{
+            curr_mirror_view_idx_=it-mirror_views_.begin();
+        }*/
+
+        for(typename std::list<range>::iterator it=curr_mirror_view_it_;it!=mirror_views_.end();++it)
+        {
+            //寻找间隙并填充数据
+            range &elem=*it;
+            range r_intersect(0,0);
+
+            if(_r1_tmp.in(elem)||_r1_tmp.equals(elem))
+            {
+                is_complete=true;
+                break;
+            }
+            else if(_r1_tmp.left_intersects(elem))
+            {
+                r_intersect=_r1_tmp.get_intersect(elem);
+                _r1_tmp.sub_intersect(r_intersect);
+            }
+            else if((_r1_tmp.contains(elem)&&!_r1_tmp.equals(elem))||_r1_tmp.right_intersects(elem))
+            {
+                //填充前面一段间隙
+                if(_r1_tmp.a<elem.a)
+                {
+                    range r_gap(_r1_tmp.a, elem.a-1);
+                    if(!read_data(r_gap)){return false;}
+                    _r1_tmp.sub_intersect(r_gap);
+                }
+
+                r_intersect=_r1_tmp.get_intersect(elem);
+                if(_r1_tmp.equals(r_intersect))
+                {
+                    is_complete=true;
+                    break;
+                }
+                else
+                {
+                    _r1_tmp.sub_intersect(r_intersect);
+                }
+            }
+            else if(!_r1_tmp.intersects(elem)&& elem.a>_r1_tmp.b)//且在右侧
+            {
+                if(!read_data(_r1_tmp)){return false;}
+                is_complete=true;
+                break;
+            }
+        }
+
+        //后面没有mirror了
+        if(!is_complete)
+        {
+            if(!read_data(_r1_tmp)){return false;}
+        }
+
+        //拼接连续的mirror_views
+        typename std::list<range>::iterator left_it=mirror_views_.end();
+        typename std::list<range>::iterator right_it=mirror_views_.end();
+
+        if(curr_mirror_view_it_==mirror_views_.end())
+        {
+            mirror_views_.push_back(_r1);
+            //更新curr_mirror_view_it_
+            curr_mirror_view_it_=mirror_views_.begin();
+        }
+        else if(_r1.in(*curr_mirror_view_it_))
+        {
+            //curr_mirror_view_it_=first_range;
+        }
+        else
+        {
+            for(typename std::list<range>::iterator it=curr_mirror_view_it_;it!=mirror_views_.end();)
+            {
+                range &elem=*it;
+                if(_r1.left_intersects(elem)||_r1.left_beside(elem))
+                {
+                    left_it=it;
+                }
+                else if (_r1.right_intersects(elem)||_r1.right_beside(elem)) {
+                    right_it=it;
+                }
+                else if(elem.a>_r1.b)
+                {
+                    break;
+                }
+                else if(_r1.contains(elem))
+                {
+                    //此时curr_mirror_view_it_应该会>=it
+                    //若curr_mirror_view_it_==it应更新它
+                    bool eq=curr_mirror_view_it_==it;
+                    it=mirror_views_.erase(it);
+                    if(eq){curr_mirror_view_it_=it;}
+                    continue;
+                }
+                ++it;
+            }
+
+
+            if(left_it!=mirror_views_.end())
+            {
+                if(right_it!=mirror_views_.end())
+                {
+                    (*left_it).b=(*right_it).b;
+                    right_it=mirror_views_.erase(right_it);
+                }
+                else
+                {
+                    (*left_it).b=_r1.b;
+                }
+                curr_mirror_view_it_=left_it;
+            }
+            else
+            {
+                if(right_it!=mirror_views_.end())
+                {
+                    (*right_it).a=_r1.a;
+                    curr_mirror_view_it_=right_it;
+                }
+                else
+                {
+                    //插入后应更新curr_mirror_view_it_
+                    curr_mirror_view_it_=mirror_views_.insert(curr_mirror_view_it_==mirror_views_.end()?
+                                                                  mirror_views_.end():
+                                                                  std::next(curr_mirror_view_it_), _r1);
+                }
+            }
+        }
         return true;
     }
 
     bool read_data(const range& r1)
     {
         if(!io_imp_.seekg(r1.a)){return false;}
-        if(!io_imp_.read(mirror_.data()+r1.a, r1.size())){return false;}
+        if(!io_imp_.read(reinterpret_cast<uint8_t*>(mirror_.data())+r1.a, r1.size())){return false;}
         return true;
     }
 
 private:
-    std::vector<uint8_t> mirror_;
+    //std::vector<uint8_t> mirror_;
+    mio::mmap_sink mirror_;
     std::list<range> mirror_views_;
     //std::set<std::pair<uint64_t, uint64_t>> mirror_views_;
-    //std::map<uint64_t, uint64_t> mirror_views_;
 
-    bool is_seek_on_mirror_=false;
-    uint64_t last_seek_pos_=0;
-    uint64_t last_read_len=0;
-    //std::pair<uint64_t, uint64_t> &curr_mirror_view_;
-    int32_t curr_mirror_view_idx_=-1;
+    //int32_t curr_mirror_view_idx_=-1;
     typename std::list<range>::iterator curr_mirror_view_it_;
 
-    
 
 private:
     __ioable_imp &io_imp_;
-    uint64_t io_pos_ = 0;
+    uint64_t io_pos_ = 0;//特殊情况：当io_len==0时，io_pos的值是无效的
     uint64_t io_len_ = 0;
     bool is_open_ = false;
 };
